@@ -1,6 +1,7 @@
 <html>
 <head>
   <title>3D First Person Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
     body { margin: 0; }
     canvas { display: block; }
@@ -53,6 +54,103 @@
       top: 50%;
       transform: translateY(-50%);
     }
+    #crosshairEditor {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 15px;
+      border-radius: 8px;
+      color: white;
+      font-family: monospace;
+    }
+    
+    .crosshairOption {
+      cursor: pointer;
+      margin: 5px;
+      padding: 5px;
+      border: 1px solid #666;
+      border-radius: 4px;
+    }
+    
+    .crosshairOption:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .colorPicker {
+      margin: 5px;
+    }
+    
+    .sizeSlider {
+      width: 100px;
+    }
+    
+    /* Mobile UI */
+    #mobileControls {
+      display: none;
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+    }
+    
+    .joystick-base {
+      position: fixed;
+      bottom: 80px;
+      left: 80px;
+      width: 120px;
+      height: 120px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+    }
+    
+    .joystick-stick {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 50px;
+      height: 50px;
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+    
+    .mobile-button {
+      position: fixed;
+      width: 60px;
+      height: 60px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      color: white;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    
+    #jumpButton {
+      bottom: 30px;
+      right: 30px;
+    }
+    
+    #punchButton {
+      bottom: 100px;
+      right: 30px;
+    }
+    
+    #pickupButton {
+      bottom: 30px;
+      right: 100px;
+    }
+    
+    @media (max-width: 768px) {
+      #controls {  }
+      #crosshairEditor { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -67,7 +165,26 @@
     HOLD - Pick up<br>
     ESC - Pause
   </div>
-  <div class="crosshair"></div>
+  <div id="crosshairEditor">
+    <h3>Crosshair Editor</h3>
+    <div>
+      <label>Color: </label>
+      <input type="color" id="crosshairColor" class="colorPicker" value="#ffffff">
+    </div>
+    <div>
+      <label>Size: </label>
+      <input type="range" id="crosshairSize" class="sizeSlider" min="10" max="40" value="20">
+    </div>
+    <div>
+      <label>Thickness: </label>
+      <input type="range" id="crosshairThickness" class="sizeSlider" min="1" max="5" value="2">
+    </div>
+    <div>Style:
+      <div class="crosshairOption" data-style="classic">Classic +</div>
+      <div class="crosshairOption" data-style="dot">Dot</div>
+      <div class="crosshairOption" data-style="circle">Circle</div>
+    </div>
+  </div>
   <script type="module" src="game.js"></script>
 </body>
 </html>
