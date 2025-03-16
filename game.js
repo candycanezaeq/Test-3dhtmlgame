@@ -40,6 +40,7 @@ class Game {
     this.punchDuration = 0.3; // seconds
     this.punchCooldown = false;
     this.lastPunchTime = 0;
+    this.fistEquipped = false;
     
     this.lookSensitivity = 0.5;
     
@@ -250,19 +251,22 @@ class Game {
   }
 
   createFistModel() {
+    const textureLoader = new THREE.TextureLoader();
+    const fistTexture = textureLoader.load('/Fist up fps hand.png');
+
     const fistGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.6);
-    const fistMaterial = new THREE.MeshStandardMaterial({ color: 0xffceb4 });
+    const fistMaterial = new THREE.MeshBasicMaterial({ map: fistTexture, transparent: true }); // Using basic material for texture visibility
+
     this.fistModel = new THREE.Mesh(fistGeometry, fistMaterial);
     
-    // Position the fist
     this.fistModel.position.set(0.4, -0.3, -0.8);
+    this.fistModel.visible = false;
     this.camera.add(this.fistModel);
   }
 
   spawnCube(x, y, z) {
     const geometry = new THREE.BoxGeometry();
     
-    // Brighter, more saturated colors
     const hue = Math.random();
     const saturation = 0.8;
     const lightness = 0.6;
@@ -288,12 +292,10 @@ class Game {
       return;
     }
 
-    // Create spawn sound effect
     const spawnSound = new Audio('/half-life-gmod-death-sound-high-quality.mp3');
     spawnSound.volume = 0.2;
     spawnSound.play();
 
-    // Spawn cube with reduced initial velocity
     const direction = new THREE.Vector3();
     this.camera.getWorldDirection(direction);
     const spawnPosition = this.camera.position.clone().add(direction.multiplyScalar(3)); 
@@ -307,7 +309,6 @@ class Game {
     if (!this.controls.isLocked) return;
 
     if (this.heldCube) {
-      // Throw the held cube in looking direction
       const direction = new THREE.Vector3();
       this.camera.getWorldDirection(direction);
       this.heldCube.userData.isHeld = false;
@@ -315,7 +316,6 @@ class Game {
       this.cubeVelocities.get(this.heldCube).copy(throwVelocity);
       this.heldCube = null;
     } else {
-      // Try to pick up a cube
       const center = new THREE.Vector2();
       this.raycaster.setFromCamera(center, this.camera);
       const intersects = this.raycaster.intersectObjects(this.scene.children);
@@ -332,7 +332,7 @@ class Game {
   }
 
   onMouseDown(event) {
-    if (!this.controls.isLocked || this.punchCooldown) return;
+    if (!this.controls.isLocked || this.punchCooldown || !this.fistEquipped) return;
     
     if (event.button === 0) { // Left click
       this.startPunch();
@@ -348,7 +348,6 @@ class Game {
     this.punchCooldown = true;
     this.lastPunchTime = now;
     
-    // Punch raycast
     const center = new THREE.Vector2();
     this.raycaster.setFromCamera(center, this.camera);
     const intersects = this.raycaster.intersectObjects(this.cubes);
@@ -357,17 +356,39 @@ class Game {
       const hitCube = intersects[0].object;
       const hitPoint = intersects[0].point;
       
-      // Create hole effect by scaling the cube
       const direction = hitPoint.clone().sub(hitCube.position).normalize();
-      hitCube.scale.multiplyScalar(0.8);
       
-      // Add force to the cube
+      this.createPunchHole(hitCube, hitPoint, direction);
+      
       const punchForce = direction.multiplyScalar(10);
       this.cubeVelocities.get(hitCube).add(punchForce);
       
-      // Screen shake on hit
       this.shakeIntensity = 0.2;
     }
+  }
+
+  createPunchHole(hitCube, hitPoint, direction) {
+    const textureLoader = new THREE.TextureLoader();
+    const holeTexture = textureLoader.load('/Holefrompunch.png');
+
+    const decalGeometry = new THREE.PlaneGeometry(0.5, 0.5); 
+    const decalMaterial = new THREE.MeshBasicMaterial({
+      map: holeTexture,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+
+    const decal = new THREE.Mesh(decalGeometry, decalMaterial);
+
+    decal.position.copy(hitPoint);
+    decal.position.add(direction.multiplyScalar(0.26)); 
+
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
+    decal.rotation.setFromQuaternion(quaternion);
+
+    hitCube.add(decal);
   }
 
   onKeyDown(event) {
@@ -393,6 +414,10 @@ class Game {
           this.velocity.y += 20;
           this.canJump = false;
         }
+        break;
+      case 'Digit2': 
+        this.fistEquipped = !this.fistEquipped;
+        this.fistModel.visible = this.fistEquipped;
         break;
     }
   }
@@ -429,7 +454,6 @@ class Game {
     document.getElementById('position').textContent = 
       `X: ${pos.x.toFixed(2)} Y: ${pos.y.toFixed(2)} Z: ${pos.z.toFixed(2)}`;
     
-    // Update footstep sounds
     const isMovingNow = this.moveForward || this.moveBackward || this.moveLeft || this.moveRight;
     
     if (isMovingNow !== this.isMoving) {
@@ -479,26 +503,21 @@ class Game {
 
       const velocity = this.cubeVelocities.get(cube);
       
-      // Apply gravity
       velocity.y += gravity * delta;
       
-      // Update position
       cube.position.x += velocity.x * delta;
       cube.position.y += velocity.y * delta;
       cube.position.z += velocity.z * delta;
       
-      // Floor collision with more friction
       if (cube.position.y < 0.5) {
         cube.position.y = 0.5;
         if (velocity.y < 0) {
           velocity.y = -velocity.y * damping;
-          // Apply stronger ground friction
           velocity.x *= groundFriction;
           velocity.z *= groundFriction;
         }
       }
       
-      // Cube collision with more friction
       for (const otherCube of this.cubes) {
         if (cube === otherCube) continue;
         
@@ -511,7 +530,6 @@ class Game {
           if (dot < 0) {
             velocity.sub(normal.multiplyScalar(2 * dot));
             velocity.multiplyScalar(damping);
-            // Apply friction to lateral movement during collision
             const lateralVelocity = velocity.clone().sub(normal.multiplyScalar(velocity.dot(normal)));
             lateralVelocity.multiplyScalar(friction);
             velocity.copy(lateralVelocity.add(normal.multiplyScalar(velocity.dot(normal))));
@@ -519,7 +537,6 @@ class Game {
         }
       }
       
-      // Additional velocity dampening for more stable stacking
       if (Math.abs(velocity.y) < 0.1 && cube.position.y <= 0.51) {
         velocity.x *= 0.92; 
         velocity.z *= 0.92;
@@ -528,7 +545,6 @@ class Game {
   }
 
   createBuildings() {
-    // Create several buildings with different sizes and positions
     const buildingConfigs = [
       { pos: [-40, 0, -40], size: [15, 30, 15], color: 0x808080 },
       { pos: [40, 0, -40], size: [20, 40, 20], color: 0x707070 },
@@ -546,9 +562,8 @@ class Game {
       
       const building = new THREE.Mesh(geometry, material);
       building.position.set(...config.pos);
-      building.position.y += config.size[1] / 2; // Move up by half height
+      building.position.y += config.size[1] / 2; 
       
-      // Add windows
       this.addBuildingWindows(building, config.size);
       
       this.scene.add(building);
@@ -587,7 +602,6 @@ class Game {
   }
 
   createProps() {
-    // Create benches
     const benchPositions = [
       [-10, 0, -10],
       [10, 0, 10],
@@ -599,7 +613,6 @@ class Game {
       this.createBench(...pos);
     });
 
-    // Create trees
     const treePositions = [
       [-15, 0, -15],
       [15, 0, 15],
@@ -615,13 +628,11 @@ class Game {
   createBench(x, y, z) {
     const benchGroup = new THREE.Group();
     
-    // Seat
     const seatGeometry = new THREE.BoxGeometry(3, 0.2, 1);
     const seatMaterial = new THREE.MeshStandardMaterial({ color: 0x4d2926 });
     const seat = new THREE.Mesh(seatGeometry, seatMaterial);
     seat.position.y = 0.6;
     
-    // Legs
     const legGeometry = new THREE.BoxGeometry(0.2, 1.2, 1);
     const legMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
     
@@ -639,13 +650,11 @@ class Game {
   createTree(x, y, z) {
     const treeGroup = new THREE.Group();
     
-    // Trunk
     const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.5, 3, 8);
     const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x4d2926 });
     const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
     trunk.position.y = 1.5;
     
-    // Leaves
     const leavesGeometry = new THREE.ConeGeometry(2, 4, 8);
     const leavesMaterial = new THREE.MeshStandardMaterial({ color: 0x0f5f0f });
     const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
@@ -657,20 +666,17 @@ class Game {
   }
 
   createMoreProps() {
-    // Create a fountain
     this.createFountain(0, 0, 0);
   }
 
   createFountain(x, y, z) {
     const fountainGroup = new THREE.Group();
 
-    // Basin
     const basinGeometry = new THREE.CylinderGeometry(5, 5, 1, 32);
     const basinMaterial = new THREE.MeshStandardMaterial({ color: 0x70a1ff, roughness: 0.5, metalness: 0.1 });
     const basin = new THREE.Mesh(basinGeometry, basinMaterial);
     basin.position.y = 0.5;
 
-    // Water
     const waterGeometry = new THREE.CylinderGeometry(4.5, 4.5, 0.5, 32);
     const waterMaterial = new THREE.MeshBasicMaterial({ color: 0x0099ff, transparent: true, opacity: 0.7 });
     const water = new THREE.Mesh(waterGeometry, waterMaterial);
@@ -686,7 +692,7 @@ class Game {
       this.camera.position.x += (Math.random() - 0.5) * this.shakeIntensity;
       this.camera.position.y += (Math.random() - 0.5) * this.shakeIntensity;
       this.camera.position.z += (Math.random() - 0.5) * this.shakeIntensity;
-      this.shakeIntensity *= 0.9; // Decay the shake
+      this.shakeIntensity *= 0.9; 
       
       if (this.shakeIntensity < 0.01) {
         this.shakeIntensity = 0;
@@ -695,8 +701,9 @@ class Game {
   }
 
   updateFistAnimation(delta) {
+    if (!this.fistEquipped) return;
+
     if (!this.isPunching) {
-      // Idle animation
       this.fistModel.position.y = -0.3 + Math.sin(performance.now() * 0.002) * 0.02;
       return;
     }
@@ -705,12 +712,10 @@ class Game {
     const progress = this.punchAnimationTime / this.punchDuration;
     
     if (progress < 0.5) {
-      // Forward punch
       const punchProgress = progress * 2;
       this.fistModel.position.z = -0.8 - punchProgress * 0.5;
       this.fistModel.rotation.x = punchProgress * Math.PI * 0.1;
     } else {
-      // Retract
       const retractProgress = (progress - 0.5) * 2;
       this.fistModel.position.z = -1.3 + retractProgress * 0.5;
       this.fistModel.rotation.x = Math.PI * 0.1 - retractProgress * Math.PI * 0.1;
@@ -786,12 +791,6 @@ class Game {
       const time = performance.now();
       let delta = (time - this.prevTime) / 1000;
       
-      // Prevent huge physics steps after unpause
-      if (delta > 0.1) {
-        delta = this.lastDelta;
-      }
-      this.lastDelta = delta;
-
       this.velocity.x -= this.velocity.x * 10.0 * delta;
       this.velocity.z -= this.velocity.z * 10.0 * delta;
       this.velocity.y -= 9.8 * 10.0 * delta;
@@ -818,15 +817,12 @@ class Game {
         this.canJump = true;
       }
 
-      // Update cube physics with capped delta
       this.updateCubePhysics(Math.min(delta, 0.1));
 
-      // Check fall velocity for screen shake
       if (this.velocity.y < this.fallVelocityThreshold) {
         this.shakeIntensity = Math.abs(this.velocity.y) * 0.03;
       }
       
-      // Apply screen shake
       this.applyScreenShake();
 
       this.updatePosition();
@@ -834,13 +830,11 @@ class Game {
       this.updateFistAnimation(delta);
       this.prevTime = time;
     } else {
-      // When paused, just update the previous time without processing physics
       this.prevTime = performance.now();
     }
 
     this.updateFPS();
     
-    // Update sun position and color based on time
     const timeOfDay = (performance.now() * 0.0001) % (Math.PI * 2);
     const sunRadius = 400;
     this.sun.position.x = Math.cos(timeOfDay) * sunRadius;
@@ -850,12 +844,10 @@ class Game {
     const sunColor = new THREE.Color().setHSL(0.1, 0.7, Math.max(0.5, sunHeight));
     this.sun.material.color.copy(sunColor);
     
-    // Update sky colors based on sun position
     const skyMaterial = this.scene.getObjectByProperty('type', 'Mesh').material;
     if (skyMaterial.uniforms) {
       skyMaterial.uniforms.sunPosition.value.copy(this.sun.position);
       
-      // Adjust sky colors based on sun position
       const dayTopColor = new THREE.Color(0x0077ff);
       const nightTopColor = new THREE.Color(0x000024);
       const dayBottomColor = new THREE.Color(0x88ccff);
@@ -870,5 +862,4 @@ class Game {
   }
 }
 
-// Start the game
 new Game();
