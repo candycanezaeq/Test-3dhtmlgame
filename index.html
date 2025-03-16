@@ -1,0 +1,73 @@
+<html>
+<head>
+  <title>3D First Person Game</title>
+  <style>
+    body { margin: 0; }
+    canvas { display: block; }
+    #hud {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: white;
+      font-family: monospace;
+      font-size: 20px;
+      text-shadow: 2px 2px black;
+    }
+    #controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      text-align: right;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 15px;
+      border-radius: 8px;
+      color: white;
+      font-family: monospace;
+      font-size: 16px;
+    }
+    .crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .crosshair::before,
+    .crosshair::after {
+      content: "";
+      position: absolute;
+      background: white;
+      box-shadow: 0 0 4px black;
+    }
+    .crosshair::before {
+      width: 2px;
+      height: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    .crosshair::after {
+      width: 20px;
+      height: 2px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    Position: <span id="position"></span><br>
+    FPS: <span id="fps"></span>
+  </div>
+  <div id="controls">
+    WASD - Move<br>
+    SPACE - Jump<br>
+    CLICK - Punch/Throw<br>
+    HOLD - Pick up<br>
+    ESC - Pause
+  </div>
+  <div class="crosshair"></div>
+  <script type="module" src="game.js"></script>
+</body>
+</html>
