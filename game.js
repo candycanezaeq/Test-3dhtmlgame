@@ -20,7 +20,7 @@ class Game {
     this.prevTime = performance.now();
     this.frameCount = 0;
     this.lastFpsUpdate = 0;
-    this.lastDelta = 1/60; // Store last good delta for pause/unpause
+    this.lastDelta = 1 / 60; // Store last good delta for pause/unpause
 
     this.raycaster = new THREE.Raycaster();
     this.heldCube = null;
@@ -41,11 +41,61 @@ class Game {
     this.punchCooldown = false;
     this.lastPunchTime = 0;
     
+    this.lookSensitivity = 0.5;
+    
+    // Add audio properties
+    this.footstepSound = new Audio('/concrete-footsteps-1-6265.mp3');
+    this.footstepSound.volume = 0.3;
+    this.deathSound = new Audio('/half-life-gmod-death-sound-high-quality.mp3');
+    this.deathSound.volume = 0.5;
+    this.lastFootstep = 0;
+    this.footstepInterval = 400; // ms between footsteps
+    this.isMoving = false;
+    
     this.init();
+    this.initCrosshairEditor();
   }
 
   init() {
-    // Create gradient sky background
+    // Create sun
+    const sunGeometry = new THREE.SphereGeometry(10, 32, 32);
+    const sunMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffaa,
+      transparent: true,
+      opacity: 0.8
+    });
+    this.sun = new THREE.Mesh(sunGeometry, sunMaterial);
+    this.sun.position.set(100, 400, -100);
+    this.scene.add(this.sun);
+
+    // Add sun glow
+    const sunGlowGeometry = new THREE.SphereGeometry(15, 32, 32);
+    const sunGlowMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        color: { value: new THREE.Color(0xffffaa) }
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 color;
+        varying vec3 vNormal;
+        void main() {
+          float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+          gl_FragColor = vec4(color, intensity);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending
+    });
+    const sunGlow = new THREE.Mesh(sunGlowGeometry, sunGlowMaterial);
+    this.sun.add(sunGlow);
+
+    // Enhanced sky shader
     const vertexShader = `
       varying vec3 vWorldPosition;
       void main() {
@@ -58,18 +108,26 @@ class Game {
     const fragmentShader = `
       uniform vec3 topColor;
       uniform vec3 bottomColor;
+      uniform vec3 sunColor;
+      uniform vec3 sunPosition;
       uniform float offset;
       uniform float exponent;
       varying vec3 vWorldPosition;
+      
       void main() {
         float h = normalize(vWorldPosition + offset).y;
-        gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+        float sunInfluence = max(dot(normalize(vWorldPosition), normalize(sunPosition)), 0.0);
+        vec3 skyColor = mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0));
+        skyColor = mix(skyColor, sunColor, pow(sunInfluence, 8.0) * 0.5);
+        gl_FragColor = vec4(skyColor, 1.0);
       }
     `;
 
     const uniforms = {
-      topColor: { value: new THREE.Color(0x71c5ee) },    // Light blue
-      bottomColor: { value: new THREE.Color(0xdcf5ff) }, // Very light blue
+      topColor: { value: new THREE.Color(0x0077ff) },    // Deep blue
+      bottomColor: { value: new THREE.Color(0x88ccff) }, // Light blue
+      sunColor: { value: new THREE.Color(0xffffaa) },    // Sun color
+      sunPosition: { value: this.sun.position },
       offset: { value: 33 },
       exponent: { value: 0.6 }
     };
@@ -104,20 +162,49 @@ class Game {
     // Floor with grid texture
     const floorGeometry = new THREE.PlaneGeometry(200, 200);
     
-    // Create grid texture with dark green lines
-    const gridSize = 200;
-    const gridDivisions = 100;
-    const gridTexture = new THREE.GridHelper(gridSize, gridDivisions, 0x0a3a0a, 0x0a3a0a); 
-    gridTexture.material.opacity = 0.4;
-    gridTexture.material.transparent = true;
-    gridTexture.position.y = 0.01;
-    this.scene.add(gridTexture);
+    // Enhanced grass texturegeneration
+    const textureSize = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = textureSize;
+    canvas.height = textureSize;
+    const ctx = canvas.getContext('2d');
 
-    // Floor material with darker grass-like appearance
+    // Create grass texture
+    ctx.fillStyle = '#184d18';
+    ctx.fillRect(0, 0, textureSize, textureSize);
+
+    // Add noise pattern
+    for (let i = 0; i < 50000; i++) {
+      const x = Math.random() * textureSize;
+      const y = Math.random() * textureSize;
+      const size = Math.random() * 3 + 1;
+      ctx.fillStyle = `rgba(${Math.random() * 20 + 20}, ${Math.random() * 60 + 60}, ${Math.random() * 20 + 20}, 0.3)`;
+      ctx.fillRect(x, y, size, size);
+    }
+
+    // Add grass strands
+    for (let i = 0; i < 1000; i++) {
+      const x = Math.random() * textureSize;
+      const y = Math.random() * textureSize;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.random() * 4 - 2, y + Math.random() * 8 + 4);
+      ctx.strokeStyle = `rgba(${Math.random() * 30 + 30}, ${Math.random() * 70 + 70}, ${Math.random() * 30 + 30}, 0.5)`;
+      ctx.lineWidth = Math.random() * 2 + 1;
+      ctx.stroke();
+    }
+
+    const grassTexture = new THREE.CanvasTexture(canvas);
+    grassTexture.wrapS = THREE.RepeatWrapping;
+    grassTexture.wrapT = THREE.RepeatWrapping;
+    grassTexture.repeat.set(50, 50);
+
+    // Update floor material with texture
     const floorMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x184d18, 
+      color: 0x184d18,
       roughness: 0.9,
       metalness: 0.0,
+      map: grassTexture,
       transparent: true,
       opacity: 1.0
     });
@@ -146,6 +233,7 @@ class Game {
     // Add buildings and props
     this.createBuildings();
     this.createProps();
+    this.createMoreProps();
 
     // Camera initial position
     this.camera.position.y = 2;
@@ -176,8 +264,8 @@ class Game {
     
     // Brighter, more saturated colors
     const hue = Math.random();
-    const saturation = 0.8; 
-    const lightness = 0.6; 
+    const saturation = 0.8;
+    const lightness = 0.6;
     const color = new THREE.Color().setHSL(hue, saturation, lightness);
     
     const material = new THREE.MeshStandardMaterial({ 
@@ -199,6 +287,11 @@ class Game {
       this.controls.lock();
       return;
     }
+
+    // Create spawn sound effect
+    const spawnSound = new Audio('/half-life-gmod-death-sound-high-quality.mp3');
+    spawnSound.volume = 0.2;
+    spawnSound.play();
 
     // Spawn cube with reduced initial velocity
     const direction = new THREE.Vector3();
@@ -335,6 +428,22 @@ class Game {
     const pos = this.camera.position;
     document.getElementById('position').textContent = 
       `X: ${pos.x.toFixed(2)} Y: ${pos.y.toFixed(2)} Z: ${pos.z.toFixed(2)}`;
+    
+    // Update footstep sounds
+    const isMovingNow = this.moveForward || this.moveBackward || this.moveLeft || this.moveRight;
+    
+    if (isMovingNow !== this.isMoving) {
+      this.isMoving = isMovingNow;
+    }
+    
+    if (this.isMoving && this.canJump) {
+      const now = performance.now();
+      if (now - this.lastFootstep > this.footstepInterval) {
+        this.footstepSound.currentTime = 0;
+        this.footstepSound.play();
+        this.lastFootstep = now;
+      }
+    }
   }
 
   updateFPS() {
@@ -547,6 +656,31 @@ class Game {
     this.scene.add(treeGroup);
   }
 
+  createMoreProps() {
+    // Create a fountain
+    this.createFountain(0, 0, 0);
+  }
+
+  createFountain(x, y, z) {
+    const fountainGroup = new THREE.Group();
+
+    // Basin
+    const basinGeometry = new THREE.CylinderGeometry(5, 5, 1, 32);
+    const basinMaterial = new THREE.MeshStandardMaterial({ color: 0x70a1ff, roughness: 0.5, metalness: 0.1 });
+    const basin = new THREE.Mesh(basinGeometry, basinMaterial);
+    basin.position.y = 0.5;
+
+    // Water
+    const waterGeometry = new THREE.CylinderGeometry(4.5, 4.5, 0.5, 32);
+    const waterMaterial = new THREE.MeshBasicMaterial({ color: 0x0099ff, transparent: true, opacity: 0.7 });
+    const water = new THREE.Mesh(waterGeometry, waterMaterial);
+    water.position.y = 1.25;
+
+    fountainGroup.add(basin, water);
+    fountainGroup.position.set(x, y, z);
+    this.scene.add(fountainGroup);
+  }
+
   applyScreenShake() {
     if (this.shakeIntensity > 0) {
       this.camera.position.x += (Math.random() - 0.5) * this.shakeIntensity;
@@ -587,6 +721,61 @@ class Game {
       this.fistModel.position.set(0.4, -0.3, -0.8);
       this.fistModel.rotation.set(0, 0, 0);
       setTimeout(() => this.punchCooldown = false, 100);
+    }
+  }
+
+  initCrosshairEditor() {
+    const crosshair = document.querySelector('.crosshair');
+    const colorPicker = document.getElementById('crosshairColor');
+    const sizeSlider = document.getElementById('crosshairSize');
+    const thicknessSlider = document.getElementById('crosshairThickness');
+    const styleOptions = document.querySelectorAll('.crosshairOption');
+
+    colorPicker.addEventListener('input', (e) => {
+      crosshair.style.setProperty('--crosshair-color', e.target.value);
+      document.querySelectorAll('.crosshair::before, .crosshair::after')
+        .forEach(el => el.style.background = e.target.value);
+    });
+
+    sizeSlider.addEventListener('input', (e) => {
+      crosshair.style.width = `${e.target.value}px`;
+      crosshair.style.height = `${e.target.value}px`;
+    });
+
+    thicknessSlider.addEventListener('input', (e) => {
+      document.documentElement.style.setProperty('--crosshair-thickness', `${e.target.value}px`);
+      document.querySelectorAll('.crosshair::before, .crosshair::after')
+        .forEach(el => {
+          if (el.matches('::before')) {
+            el.style.width = `${e.target.value}px`;
+          } else {
+            el.style.height = `${e.target.value}px`;
+          }
+        });
+    });
+
+    styleOptions.forEach(option => {
+      option.addEventListener('click', () => {
+        const style = option.dataset.style;
+        this.applyCrosshairStyle(style, crosshair);
+      });
+    });
+  }
+
+  applyCrosshairStyle(style, crosshair) {
+    crosshair.className = 'crosshair';
+    crosshair.classList.add(`crosshair-${style}`);
+    
+    switch(style) {
+      case 'dot':
+        crosshair.innerHTML = '<div class="dot"></div>';
+        break;
+      case 'circle':
+        crosshair.innerHTML = '<div class="circle"></div>';
+        break;
+      default:
+        crosshair.innerHTML = '';
+        break;
     }
   }
 
@@ -650,9 +839,36 @@ class Game {
     }
 
     this.updateFPS();
+    
+    // Update sun position and color based on time
+    const timeOfDay = (performance.now() * 0.0001) % (Math.PI * 2);
+    const sunRadius = 400;
+    this.sun.position.x = Math.cos(timeOfDay) * sunRadius;
+    this.sun.position.y = Math.sin(timeOfDay) * sunRadius;
+    
+    const sunHeight = (this.sun.position.y + sunRadius) / (sunRadius * 2);
+    const sunColor = new THREE.Color().setHSL(0.1, 0.7, Math.max(0.5, sunHeight));
+    this.sun.material.color.copy(sunColor);
+    
+    // Update sky colors based on sun position
+    const skyMaterial = this.scene.getObjectByProperty('type', 'Mesh').material;
+    if (skyMaterial.uniforms) {
+      skyMaterial.uniforms.sunPosition.value.copy(this.sun.position);
+      
+      // Adjust sky colors based on sun position
+      const dayTopColor = new THREE.Color(0x0077ff);
+      const nightTopColor = new THREE.Color(0x000024);
+      const dayBottomColor = new THREE.Color(0x88ccff);
+      const nightBottomColor = new THREE.Color(0x000000);
+      
+      const blendFactor = Math.max(0, Math.min(1, (this.sun.position.y + 200) / 400));
+      skyMaterial.uniforms.topColor.value.copy(dayTopColor).lerp(nightTopColor, 1 - blendFactor);
+      skyMaterial.uniforms.bottomColor.value.copy(dayBottomColor).lerp(nightBottomColor, 1 - blendFactor);
+    }
+
     this.renderer.render(this.scene, this.camera);
   }
-  
-  // Start the game
 }
+
+// Start the game
 new Game();
